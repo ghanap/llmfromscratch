@@ -1,3 +1,21 @@
+# Language Modeling From Scratch (Stanford CS336)
+
+[![Live Tokenizer Demo](https://img.shields.io/badge/Live_Demo-BPE_Tokenizer-blue)](https://ghanap.github.io/llmfromscratch/tokenizer.html)
+
+This repository contains my implementation for the Stanford CS336 Assignment 1. Instead of just a clone, this contains the completed implementations of the core transformer architecture and a custom BPE tokenizer.
+
+## What I Implemented
+
+### 1. BPE Tokenizer & Visualizer
+- **BPE Tokenization**: Implemented a Byte-Pair Encoding tokenizer from scratch, including pretokenisation regex and parallel merging.
+- **Interactive Visualizer**: Built a 528-line interactive BPE visualizer in pure JavaScript/HTML. 
+- **Demo**: [Try the live visualizer here!](https://ghanap.github.io/llmfromscratch/tokenizer.html) It features a full merge table, vocab viewer, compression ratio stats, and live encoding.
+
+### 2. Transformer Architecture
+- Built the core transformer components from raw PyTorch (Multi-Head Attention, FFN, Positional Encodings).
+- Implemented the training loop to train on the TinyStories dataset.
+
+---
 # CS336 Spring 2025 Assignment 1: Basics
 
 For a full description of the assignment, see the assignment handout at
@@ -47,4 +65,5 @@ gunzip owt_valid.txt.gz
 
 cd ..
 ```
+
 
