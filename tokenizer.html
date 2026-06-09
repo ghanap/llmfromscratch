@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BPE Tokenizer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f7f6f3;
+    --surface: #ffffff;
+    --border: #e2e0da;
+    --border-mid: #c8c6be;
+    --text: #1a1a18;
+    --text-muted: #6b6a66;
+    --text-faint: #9e9c97;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+    --sans: 'DM Sans', system-ui, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141412;
+      --surface: #1e1e1b;
+      --border: #2e2e2a;
+      --border-mid: #3e3e3a;
+      --text: #f0ede6;
+      --text-muted: #9e9c97;
+      --text-faint: #6b6a66;
+    }
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); }
+
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+
+  header {
+    padding: 20px 32px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    background: var(--surface);
+  }
+  header h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; }
+  header p { font-size: 13px; color: var(--text-muted); }
+
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr auto; gap: 0; }
+
+  .controls-bar {
+    grid-column: 1 / -1;
+    padding: 14px 32px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .ctrl-group { display: flex; align-items: center; gap: 10px; }
+  .ctrl-group label { font-size: 13px; color: var(--text-muted); white-space: nowrap; }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 180px;
+    height: 4px;
+    background: var(--border-mid);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--text);
+    cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--text);
+    border: none;
+    cursor: pointer;
+  }
+
+  .val-badge {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 40px;
+    text-align: center;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 3px 8px;
+  }
+
+  button {
+    font-family: var(--sans);
+    font-size: 13px;
+    padding: 6px 14px;
+    border: 1px solid var(--border-mid);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  button:hover { background: var(--bg); }
+  button.primary {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+  }
+  button.primary:hover { opacity: 0.85; }
+
+  .stats-bar {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-bottom: 1px solid var(--border);
+  }
+  .stat {
+    padding: 14px 24px;
+    border-right: 1px solid var(--border);
+  }
+  .stat:last-child { border-right: none; }
+  .stat-label { font-size: 11px; color: var(--text-faint); letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 4px; }
+  .stat-val { font-size: 26px; font-weight: 600; font-family: var(--mono); letter-spacing: -1px; }
+
+  .pane {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .pane:last-child { border-right: none; }
+
+  .pane-header {
+    padding: 10px 20px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  textarea {
+    flex: 1;
+    padding: 20px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text);
+    background: var(--bg);
+    border: none;
+    outline: none;
+    resize: none;
+  }
+
+  .token-pane { overflow-y: auto; padding: 20px; background: var(--bg); font-family: var(--mono); font-size: 13px; line-height: 2; word-break: break-word; flex: 1; }
+
+  .tok {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 4px;
+    margin: 2px 1px;
+    cursor: default;
+    white-space: pre;
+    position: relative;
+    transition: transform 0.08s;
+  }
+  .tok:hover { transform: translateY(-1px); z-index: 10; }
+  .tok:hover .tok-tip {
+    display: block;
+  }
+  .tok-tip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface);
+    border: 1px solid var(--border-mid);
+    border-radius: var(--radius-sm);
+    padding: 4px 10px;
+    font-size: 11px;
+    white-space: nowrap;
+    color: var(--text-muted);
+    pointer-events: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  }
+
+  .bottom-row {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .bottom-tabs { display: flex; border-bottom: 1px solid var(--border); }
+  .tab {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 10px 20px;
+    color: var(--text-faint);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.12s;
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
+  .tab:hover { color: var(--text); background: none; }
+  .tab.active { color: var(--text); border-bottom-color: var(--text); }
+
+  .tab-content { display: none; max-height: 220px; overflow-y: auto; }
+  .tab-content.active { display: block; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
+  th { position: sticky; top: 0; background: var(--surface); text-align: left; padding: 8px 16px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); border-bottom: 1px solid var(--border); }
+  td { padding: 6px 16px; border-bottom: 1px solid var(--border); color: var(--text); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg); }
+
+  .legend-wrap { padding: 14px 20px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .lg-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
+  .lg-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+
+  .empty { color: var(--text-faint); font-size: 13px; padding: 20px; font-family: var(--sans); }
+
+  @media (max-width: 700px) {
+    main { grid-template-columns: 1fr; }
+    .pane { border-right: none; border-bottom: 1px solid var(--border); }
+    .stats-bar { grid-template-columns: repeat(2, 1fr); }
+    .stat:nth-child(2) { border-right: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BPE Tokenizer</h1>
+  <p>Byte-pair encoding · live in browser</p>
+</header>
+
+<main>
+  <div class="controls-bar">
+    <div class="ctrl-group">
+      <label>Vocab size</label>
+      <input type="range" id="vocabSlider" min="257" max="3000" step="1" value="500">
+      <span class="val-badge" id="vocabVal">500</span>
+    </div>
+    <button class="primary" onclick="runEncode()">Tokenize</button>
+    <button onclick="loadExample()">Load example</button>
+    <button onclick="clearAll()">Clear</button>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat"><div class="stat-label">Characters</div><div class="stat-val" id="s-chars">—</div></div>
+    <div class="stat"><div class="stat-label">Tokens</div><div class="stat-val" id="s-toks">—</div></div>
+    <div class="stat"><div class="stat-label">Merges</div><div class="stat-val" id="s-merges">—</div></div>
+    <div class="stat"><div class="stat-label">Compression</div><div class="stat-val" id="s-ratio">—</div></div>
+  </div>
+
+  <div class="pane">
+    <div class="pane-header"><span>Input text</span></div>
+    <textarea id="inputText" placeholder="Type or paste text here…" spellcheck="false"></textarea>
+  </div>
+
+  <div class="pane">
+    <div class="pane-header"><span>Tokens</span><span id="tok-count" style="font-weight:400"></span></div>
+    <div class="token-pane" id="tokenDisplay"><span class="empty">Tokens will appear here after encoding.</span></div>
+  </div>
+
+  <div class="bottom-row">
+    <div class="bottom-tabs">
+      <button class="tab active" onclick="switchTab('merges',this)">Merges learned</button>
+      <button class="tab" onclick="switchTab('vocab',this)">Vocabulary</button>
+      <button class="tab" onclick="switchTab('legend',this)">Legend</button>
+    </div>
+    <div class="tab-content active" id="tab-merges">
+      <table>
+        <thead><tr><th>New ID</th><th>Left token</th><th>Right token</th><th>Merged result</th><th>Frequency</th></tr></thead>
+        <tbody id="mergeBody"></tbody>
+      </table>
+    </div>
+    <div class="tab-content" id="tab-vocab">
+      <table>
+        <thead><tr><th>ID</th><th>Token</th><th>Byte length</th><th>Type</th></tr></thead>
+        <tbody id="vocabBody"></tbody>
+      </table>
+    </div>
+    <div class="tab-content" id="tab-legend">
+      <div class="legend-wrap" id="legendWrap"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const PALETTE = [
+  { bg: '#EEEDFE', fg: '#3C3489' },
+  { bg: '#E1F5EE', fg: '#085041' },
+  { bg: '#FAECE7', fg: '#712B13' },
+  { bg: '#FBEAF0', fg: '#72243E' },
+  { bg: '#E6F1FB', fg: '#0C447C' },
+  { bg: '#EAF3DE', fg: '#27500A' },
+  { bg: '#FAEEDA', fg: '#633806' },
+  { bg: '#FCEBEB', fg: '#791F1F' },
+];
+
+const PALETTE_DARK = [
+  { bg: '#26215C', fg: '#CECBF6' },
+  { bg: '#04342C', fg: '#9FE1CB' },
+  { bg: '#4A1B0C', fg: '#F5C4B3' },
+  { bg: '#4B1528', fg: '#F4C0D1' },
+  { bg: '#042C53', fg: '#B5D4F4' },
+  { bg: '#173404', fg: '#C0DD97' },
+  { bg: '#412402', fg: '#FAC775' },
+  { bg: '#501313', fg: '#F7C1C1' },
+];
+
+function pal(idx) {
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const p = dark ? PALETTE_DARK : PALETTE;
+  return p[idx % p.length];
+}
+
+function pretokenize(text) {
+  const re = /'(?:[sdmt]|ll|ve|re)| ?[A-Za-zÀ-ÖØ-öø-ÿ]+| ?[0-9]+| ?[^\s\w]+|\s+/gu;
+  return text.match(re) || [];
+}
+
+function textToBytes(s) {
+  return Array.from(new TextEncoder().encode(s));
+}
+
+function getStats(pretokens) {
+  const c = {};
+  for (const pt of pretokens) {
+    for (let i = 0; i < pt.length - 1; i++) {
+      const k = pt[i] + ',' + pt[i+1];
+      c[k] = (c[k] || 0) + 1;
+    }
+  }
+  return c;
+}
+
+function applyMerge(pretokens, a, b, newId) {
+  return pretokens.map(pt => {
+    const out = [];
+    let i = 0;
+    while (i < pt.length) {
+      if (i < pt.length - 1 && pt[i] === a && pt[i+1] === b) { out.push(newId); i += 2; }
+      else { out.push(pt[i]); i++; }
+    }
+    return out;
+  });
+}
+
+function idToStr(id, merges) {
+  if (id < 256) {
+    const c = String.fromCharCode(id);
+    if (c === ' ') return '·';
+    if (c === '\n') return '↵';
+    if (c === '\r') return '↵';
+    if (c === '\t') return '→';
+    return c;
+  }
+  const m = merges.find(x => x.newId === id);
+  if (!m) return `[${id}]`;
+  return idToStr(m.a, merges) + idToStr(m.b, merges);
+}
+
+function byteLen(id, merges) {
+  if (id < 256) return 1;
+  const m = merges.find(x => x.newId === id);
+  if (!m) return 1;
+  return byteLen(m.a, merges) + byteLen(m.b, merges);
+}
+
+let lastMerges = [];
+let lastEncoded = [];
+
+function trainBPE(text, vocabSize) {
+  const pts = pretokenize(text).map(textToBytes);
+  const merges = [];
+  let current = pts.map(p => [...p]);
+  const num = vocabSize - 256;
+  for (let i = 0; i < num; i++) {
+    const stats = getStats(current);
+    const keys = Object.keys(stats);
+    if (!keys.length) break;
+    const top = keys.reduce((a, b) => stats[a] >= stats[b] ? a : b);
+    const freq = stats[top];
+    const [a, b] = top.split(',').map(Number);
+    const newId = 256 + i;
+    merges.push({ newId, a, b, freq });
+    current = applyMerge(current, a, b, newId);
+  }
+  return { merges, encoded: current.flat() };
+}
+
+function runEncode() {
+  const text = document.getElementById('inputText').value;
+  if (!text.trim()) {
+    clearStats(); return;
+  }
+  const vocab = parseInt(document.getElementById('vocabSlider').value);
+  const { merges, encoded } = trainBPE(text, vocab);
+  lastMerges = merges;
+  lastEncoded = encoded;
+
+  document.getElementById('s-chars').textContent = text.length.toLocaleString();
+  document.getElementById('s-toks').textContent = encoded.length.toLocaleString();
+  document.getElementById('s-merges').textContent = merges.length.toLocaleString();
+  const ratio = encoded.length > 0 ? (encoded.length / text.length * 100).toFixed(0) + '%' : '—';
+  document.getElementById('s-ratio').textContent = ratio;
+  document.getElementById('tok-count').textContent = encoded.length + ' tokens';
+
+  const uniqueIds = [...new Set(encoded)];
+  const colorMap = {};
+  uniqueIds.forEach((id, i) => { colorMap[id] = i; });
+
+  let html = '';
+  for (const id of encoded) {
+    const { bg, fg } = pal(colorMap[id]);
+    const label = idToStr(id, merges).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const tip = `id ${id} · ${byteLen(id, merges)} byte${byteLen(id, merges) !== 1 ? 's' : ''}`;
+    html += `<span class="tok" style="background:${bg};color:${fg}"><span class="tok-tip">${tip}</span>${label}</span>`;
+  }
+  document.getElementById('tokenDisplay').innerHTML = html || '<span class="empty">No tokens produced.</span>';
+
+  renderMerges(merges);
+  renderVocab(merges, uniqueIds, colorMap);
+  renderLegend(uniqueIds, colorMap, merges);
+}
+
+function renderMerges(merges) {
+  let html = '';
+  for (const m of merges.slice(0, 100)) {
+    const aL = esc(idToStr(m.a, merges));
+    const bL = esc(idToStr(m.b, merges));
+    const rL = esc(idToStr(m.newId, merges));
+    html += `<tr><td>${m.newId}</td><td>"${aL}"</td><td>"${bL}"</td><td>"${rL}"</td><td>${m.freq.toLocaleString()}</td></tr>`;
+  }
+  document.getElementById('mergeBody').innerHTML = html || '<tr><td colspan="5" style="color:var(--text-faint);padding:14px 16px">No merges at this vocab size.</td></tr>';
+}
+
+function renderVocab(merges, uniqueIds, colorMap) {
+  let html = '';
+  for (const id of uniqueIds.slice(0, 100)) {
+    const str = esc(idToStr(id, merges));
+    const bl = byteLen(id, merges);
+    const type = id < 256 ? 'base byte' : 'merged';
+    html += `<tr><td>${id}</td><td>"${str}"</td><td>${bl}</td><td>${type}</td></tr>`;
+  }
+  document.getElementById('vocabBody').innerHTML = html || '<tr><td colspan="4" style="color:var(--text-faint);padding:14px 16px">No vocab yet.</td></tr>';
+}
+
+function renderLegend(uniqueIds, colorMap, merges) {
+  let html = '';
+  for (const id of uniqueIds.slice(0, 24)) {
+    const { bg, fg } = pal(colorMap[id]);
+    const label = esc(idToStr(id, merges));
+    html += `<div class="lg-item"><span class="lg-swatch" style="background:${bg};border:1px solid ${fg}"></span>"${label}" (${id})</div>`;
+  }
+  document.getElementById('legendWrap').innerHTML = html || '<span class="empty">No tokens yet.</span>';
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function clearStats() {
+  ['s-chars','s-toks','s-merges','s-ratio'].forEach(id => document.getElementById(id).textContent = '—');
+  document.getElementById('tok-count').textContent = '';
+  document.getElementById('tokenDisplay').innerHTML = '<span class="empty">Tokens will appear here after encoding.</span>';
+  document.getElementById('mergeBody').innerHTML = '';
+  document.getElementById('vocabBody').innerHTML = '';
+  document.getElementById('legendWrap').innerHTML = '';
+}
+
+function clearAll() {
+  document.getElementById('inputText').value = '';
+  clearStats();
+}
+
+function loadExample() {
+  document.getElementById('inputText').value = `One day, a little girl named Lily found a needle in her room. She knew it was difficult to play with it because it was sharp. Lily wanted to share the needle with her mom, so she could sew a button on her shirt.
+
+Lily went to her mom and said, "Mom, I found this needle. Can you share it with me and sew my shirt?" Her mom smiled and said, "Yes, Lily, we can share the needle and fix your shirt."
+
+Together, they shared the needle and sewed the button on Lily's shirt. It was not difficult for them because they were sharing and helping each other.`;
+  runEncode();
+}
+
+function switchTab(name, el) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  el.classList.add('active');
+}
+
+document.getElementById('vocabSlider').addEventListener('input', function() {
+  document.getElementById('vocabVal').textContent = this.value;
+  runEncode();
+});
+
+document.getElementById('inputText').addEventListener('input', runEncode);
+
+loadExample();
+</script>
+</body>
+</html>
